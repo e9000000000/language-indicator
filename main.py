@@ -1,42 +1,58 @@
 import pystray
 import time
 import threading
+import os
+import re
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 
-def create_image(width, height, color1, color2):
-    # Generate an image and draw a pattern
-    image = Image.new('RGB', (width, height), color1)
+IMAGE_SIZE = (64, 64)
+BACKGROUND_COLOR = '#000000'
+FOREGROUND_COLOR = '#ff9900'
+FONT = ImageFont.truetype("./Arial.ttf", 50)
+
+
+def execp(cmd: str) -> str:
+    lines = os.popen(cmd).readlines()
+    assert lines
+    return ''.join(lines)
+
+
+def create_image(text: str):
+    image = Image.new('RGB', IMAGE_SIZE, BACKGROUND_COLOR)
     dc = ImageDraw.Draw(image)
-    dc.rectangle(
-        (width // 2, 0, width, height // 2),
-        fill=color2)
-    dc.rectangle(
-        (0, height // 2, width // 2, height),
-        fill=color2)
-
+    dc.text(tuple(map(lambda x: x // 2, IMAGE_SIZE)), text, fill=FOREGROUND_COLOR, font=FONT, anchor='mm')
     return image
 
-img0 = create_image(64, 64, 'black', 'white')
-img1 = create_image(64, 64, 'white', 'black')
+def create_images():
+    output = execp('setxkbmap -query | grep layout:')
+    regex_result = re.search(r'((\w+,?)+)$', output.strip())
+    assert regex_result
+    langs = regex_result.group(1).split(',')
+
+    result = {}
+    for lang in langs:
+        result[lang] = create_image(lang)
+    return result
 
 
-# In order for the icon to be displayed, you must provide an icon
-
-
-
-# To finally show you icon, call run
-x = False
 def update_icon(icon):
     global x
 
+    images = create_images()
+    prev = ''
     while 1:
-        x = not x
-        icon.icon = img0 if x else img1
-        time.sleep(1)
+        output = execp(r'xset -q | grep LED | grep -P \\d{8} -o')
+        lang_index = int(output) // 1000
+        lang = list(images.keys())[lang_index]
+        if lang != prev:
+            prev = lang
+            icon.icon = list(images.values())[int(output) // 1000]
+        time.sleep(0.1)
 
-icon = pystray.Icon('test name')
+icon = pystray.Icon('keyboard lang', create_image(''))
+
 thread = threading.Thread(target=update_icon, args=(icon,))
 thread.start()
 icon.run()
